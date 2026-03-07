@@ -88,4 +88,5 @@ dmypy.json
 
 # editors
 .idea/
-.vscode/
+.vscode/twrpdtgen/aik/bin/
+
