@@ -15,8 +15,6 @@ BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
 # A/B
 AB_OTA_UPDATER := true
 AB_OTA_PARTITIONS += \
-    system_ext \
-    system_dlkm \
     vendor \
     vbmeta_system \
     vbmeta_vendor \
@@ -24,7 +22,9 @@ AB_OTA_PARTITIONS += \
     odm_dlkm \
     vendor_dlkm \
     system \
-    product
+    product \
+    system_ext \
+    system_dlkm
 
 # Architecture
 TARGET_ARCH := arm64

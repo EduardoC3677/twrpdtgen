@@ -63,6 +63,12 @@ RECOVERY_SERVICE_BINS = {
 	"hw_keymaster_v2", "teed",
 }
 
+# Module metadata files to copy alongside .ko binaries
+MODULE_METADATA_FILES = {
+	"modules.load", "modules.dep", "modules.alias",
+	"modules.softdep", "modules.load.recovery",
+}
+
 # Known MTK (MediaTek) platform prefixes
 MTK_PLATFORM_PREFIXES = ("mt", "MT")
 
@@ -255,9 +261,7 @@ class DeviceTree:
 					modules_dest.mkdir(parents=True, exist_ok=True)
 					module_count = 0
 					for ko_file in modules_src.iterdir():
-						if ko_file.name.endswith(".ko") or ko_file.name in ("modules.load", "modules.dep",
-						                                                     "modules.alias", "modules.softdep",
-						                                                     "modules.load.recovery"):
+						if ko_file.name.endswith(".ko") or ko_file.name in MODULE_METADATA_FILES:
 							copyfile(ko_file, modules_dest / ko_file.name, follow_symlinks=True)
 							module_count += 1
 					if module_count > 0:

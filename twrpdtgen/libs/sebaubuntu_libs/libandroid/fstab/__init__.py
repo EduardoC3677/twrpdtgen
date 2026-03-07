@@ -226,7 +226,11 @@ class Fstab:
 				suffix = "_a" if is_ab else ""
 				mount_point = f"/{name}{suffix}"
 				device = f"/dev/block/mapper/{name}{suffix}"
-				flags = f'flags=backup=1;flashimg=1{";" if is_ab else ""}{"slotselect;" if is_ab else ""}display="{display} Image"'
+				flag_parts = ["backup=1", "flashimg=1"]
+				if is_ab:
+					flag_parts.append("slotselect")
+				flag_parts.append(f'display="{display} Image"')
+				flags = f'flags={";".join(flag_parts)}'
 				lines.append(f"{mount_point:<25s} emmc      {device:<55s} {flags}")
 			lines.append("")
 
