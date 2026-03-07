@@ -13,7 +13,10 @@ AB_OTA_PARTITIONS +=
     {{ partition.name }}
 {%- endfor %}
 
+{% if is_vendor_boot %}
+{% else %}
 BOARD_USES_RECOVERY_AS_BOOT := true
+{% endif %}
 
 {% endif %}
 # Architecture
@@ -181,6 +184,12 @@ BOARD_USES_MTK_HARDWARE := true
 {% endif %}
 
 # Recovery
+{% if is_vendor_boot %}
+TARGET_NO_RECOVERY := true
+BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
+BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
+TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
+{% endif %}
 {% if image_info.dtbo and not device_info.device_is_ab %}
 BOARD_INCLUDE_RECOVERY_DTBO := true
 {% endif %}
@@ -215,16 +224,15 @@ PLATFORM_VERSION := 16.1.0
 # TWRP Configuration
 TW_THEME := portrait_hdpi
 TW_EXTRA_LANGUAGES := true
-TW_SCREEN_BLANK_ON_BOOT := true
 TW_INPUT_BLACKLIST := "hbtp_vm"
-TW_USE_TOOLBOX := true
-{% if device_info.device_is_ab %}
 TW_INCLUDE_REPACKTOOLS := true
-{% endif %}
+TW_INCLUDE_RESETPROP := true
+TW_INCLUDE_LIBRESETPROP := true
+TARGET_USES_MKE2FS := true
 {% if is_vendor_boot %}
-TW_LOAD_VENDOR_MODULES := "modules.load"
+TW_NO_FASTBOOT_BOOT := true
+TW_INCLUDE_FASTBOOTD := true
 {% endif %}
 {% if is_mtk %}
-TW_INCLUDE_LIBRESETPROP := true
-TW_INCLUDE_RESETPROP := true
+TW_LOAD_VENDOR_BOOT_MODULES := true
 {% endif %}
