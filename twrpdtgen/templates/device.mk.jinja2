@@ -31,3 +31,19 @@ PRODUCT_PACKAGES += \
     update_engine_sideload
 {% endif %}
 
+{% if device_info.device_uses_dynamic_partitions %}
+# Dynamic partitions
+PRODUCT_USE_DYNAMIC_PARTITIONS := true
+{% endif %}
+
+{% if is_vendor_boot %}
+# Vendor boot
+PRODUCT_COPY_FILES += \
+    $(LOCAL_PATH)/recovery.fstab:$(TARGET_COPY_OUT_RECOVERY)/root/system/etc/recovery.fstab
+{% endif %}
+
+{% if is_mtk %}
+# MediaTek
+PRODUCT_PACKAGES += \
+    libion
+{% endif %}

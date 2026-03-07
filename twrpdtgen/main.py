@@ -18,7 +18,7 @@ def main():
 
 	# Main DeviceTree arguments
 	parser.add_argument("image", type=Path,
-						help="path to an image (recovery image or boot image if the device is A/B)")
+						help="path to an image (recovery, boot, or vendor_boot image)")
 	parser.add_argument("-o", "--output", type=Path, default=current_path / "output",
 						help="custom output folder")
 

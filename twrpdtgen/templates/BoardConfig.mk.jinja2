@@ -121,6 +121,27 @@ BOARD_KERNEL_SEPARATED_DTBO :=
 {% endif %}
 endif
 
+{% if is_vendor_boot and vendor_boot_info %}
+# Vendor Boot
+BOARD_BOOT_HEADER_VERSION := {{ vendor_boot_info.header_version }}
+BOARD_INCLUDE_VENDOR_RAMDISK := true
+{% if vendor_boot_info.cmdline %}
+BOARD_VENDOR_CMDLINE := {{ vendor_boot_info.cmdline }}
+{% endif %}
+{% if vendor_boot_info.dtb %}
+BOARD_PREBUILT_VENDOR_DTBIMAGE := $(DEVICE_PATH)/prebuilt/dtb.img
+{% endif %}
+{% if vendor_boot_info.has_multiple_ramdisks %}
+# This image has {{ vendor_boot_info.vendor_ramdisk_entries|length }} vendor ramdisks
+{% for entry in vendor_boot_info.vendor_ramdisk_entries %}
+# Ramdisk {{ loop.index0 }}: type={{ entry.ramdisk_type }}, name="{{ entry.name }}", size={{ entry.size }}
+{% endfor %}
+{% endif %}
+{% if vendor_boot_info.bootconfig %}
+BOARD_BOOTCONFIG := {{ vendor_boot_info.bootconfig }}
+{% endif %}
+
+{% endif %}
 # Partitions
 {% if device_info.device_uses_system_as_root %}
 BOARD_BUILD_SYSTEM_ROOT_IMAGE := true
@@ -128,8 +149,12 @@ BOARD_BUILD_SYSTEM_ROOT_IMAGE := true
 {% if image_info.pagesize %}
 BOARD_FLASH_BLOCK_SIZE := {{ image_info.pagesize|int * 64 }} # (BOARD_KERNEL_PAGESIZE * 64)
 {% endif %}
+{% if image_info.origsize %}
 BOARD_BOOTIMAGE_PARTITION_SIZE := {{ image_info.origsize }}
+{% if not device_info.device_is_ab %}
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := {{ image_info.origsize }}
+{% endif %}
+{% endif %}
 BOARD_HAS_LARGE_FILESYSTEM := true
 BOARD_SYSTEMIMAGE_PARTITION_TYPE := ext4
 BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := ext4
@@ -149,6 +174,12 @@ LZMA_RAMDISK_TARGETS := recovery
 # Platform
 TARGET_BOARD_PLATFORM := {{ device_info.platform }}
 
+{% if is_mtk %}
+# MediaTek specific
+BOARD_HAS_MTK_HARDWARE := true
+BOARD_USES_MTK_HARDWARE := true
+{% endif %}
+
 # Recovery
 {% if image_info.dtbo and not device_info.device_is_ab %}
 BOARD_INCLUDE_RECOVERY_DTBO := true
@@ -161,7 +192,7 @@ TARGET_USERIMAGES_USE_F2FS := true
 
 {% if device_info.vendor_build_security_patch %}
 # Security patch level
-VENDOR_SECURITY_PATCH := 2021-08-01
+VENDOR_SECURITY_PATCH := {{ device_info.vendor_build_security_patch }}
 
 {% endif %}
 {% if image_info.sigtype == "AVBv2" %}
@@ -189,4 +220,11 @@ TW_INPUT_BLACKLIST := "hbtp_vm"
 TW_USE_TOOLBOX := true
 {% if device_info.device_is_ab %}
 TW_INCLUDE_REPACKTOOLS := true
+{% endif %}
+{% if is_vendor_boot %}
+TW_LOAD_VENDOR_MODULES := "modules.load"
+{% endif %}
+{% if is_mtk %}
+TW_INCLUDE_LIBRESETPROP := true
+TW_INCLUDE_RESETPROP := true
 {% endif %}

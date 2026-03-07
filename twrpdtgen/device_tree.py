@@ -15,9 +15,15 @@ from sebaubuntu_libs.libandroid.props import BuildProp
 from sebaubuntu_libs.liblogging import LOGD
 from shutil import copyfile, rmtree
 from stat import S_IRWXU, S_IRGRP, S_IROTH
+from tempfile import TemporaryDirectory
 from twrpdtgen import __version__ as version
 from twrpdtgen.templates import render_template
-from typing import List
+from twrpdtgen.vendor_boot import (
+	extract_vendor_boot,
+	is_vendor_boot_image,
+	VendorBootImageInfo,
+)
+from typing import List, Optional
 
 BUILDPROP_LOCATIONS = [Path() / "default.prop",
                        Path() / "prop.default",]
@@ -33,6 +39,15 @@ FSTAB_LOCATIONS += [Path() / dir / "etc" / "recovery.fstab"
 INIT_RC_LOCATIONS = [Path()]
 INIT_RC_LOCATIONS += [Path() / dir / "etc" / "init"
                       for dir in ["system", "vendor"]]
+
+# Known MTK (MediaTek) platform prefixes
+MTK_PLATFORM_PREFIXES = ("mt", "MT")
+
+
+def _is_mtk_platform(platform: str) -> bool:
+	"""Return True if *platform* looks like a MediaTek SoC name."""
+	return any(platform.startswith(p) for p in MTK_PLATFORM_PREFIXES)
+
 
 class DeviceTree:
 	"""
@@ -51,15 +66,41 @@ class DeviceTree:
 		if not self.image.is_file():
 			raise FileNotFoundError("Specified file doesn't exist")
 
-		# Extract the image
-		self.aik_manager = AIKManager()
-		self.image_info = self.aik_manager.unpackimg(image)
+		# Detect if this is a vendor_boot image
+		self.is_vendor_boot = is_vendor_boot_image(image)
+		self.vendor_boot_info: Optional[VendorBootImageInfo] = None
 
-		assert self.image_info.ramdisk, "Ramdisk not found"
+		# Temporary directory for vendor_boot extraction
+		self._vendor_boot_tmpdir: Optional[TemporaryDirectory] = None
+
+		if self.is_vendor_boot:
+			LOGD("Detected vendor_boot image, extracting...")
+			self._vendor_boot_tmpdir = TemporaryDirectory()
+			vb_output = Path(self._vendor_boot_tmpdir.name)
+			self.vendor_boot_info = extract_vendor_boot(image, vb_output)
+			ramdisk_dir = self.vendor_boot_info.merged_ramdisk
+
+			LOGD(f"vendor_boot header version: {self.vendor_boot_info.header_version}")
+			LOGD(f"Number of ramdisks: {len(self.vendor_boot_info.vendor_ramdisk_entries)}")
+			for i, entry in enumerate(self.vendor_boot_info.vendor_ramdisk_entries):
+				LOGD(f"  Ramdisk {i}: type={entry.ramdisk_type}, "
+				     f"size={entry.size}, name='{entry.name}'")
+
+			# Create a minimal AIKImageInfo-compatible wrapper for templates
+			self.aik_manager = None
+			self.image_info = _VendorBootImageInfoAdapter(self.vendor_boot_info)
+		else:
+			# Standard boot/recovery image path
+			self.aik_manager = AIKManager()
+			self.image_info = self.aik_manager.unpackimg(image)
+			ramdisk_dir = self.image_info.ramdisk
+
+		if ramdisk_dir is None or not ramdisk_dir.is_dir():
+			raise AssertionError("Ramdisk not found")
 
 		LOGD("Getting device infos...")
 		self.build_prop = BuildProp()
-		for build_prop in [self.image_info.ramdisk / location for location in BUILDPROP_LOCATIONS]:
+		for build_prop in [ramdisk_dir / location for location in BUILDPROP_LOCATIONS]:
 			if not build_prop.is_file():
 				continue
 
@@ -67,13 +108,18 @@ class DeviceTree:
 
 		self.device_info = DeviceInfo(self.build_prop)
 
+		# Detect MTK platform
+		self.is_mtk = _is_mtk_platform(self.device_info.platform)
+		if self.is_mtk:
+			LOGD(f"Detected MediaTek platform: {self.device_info.platform}")
+
 		# Generate fstab
 		fstab = None
-		for fstab_location in [self.image_info.ramdisk / location for location in FSTAB_LOCATIONS]:
+		for fstab_location in [ramdisk_dir / location for location in FSTAB_LOCATIONS]:
 			if not fstab_location.is_file():
 				continue
 
-			LOGD(f"Generating fstab using {fstab} as reference...")
+			LOGD(f"Generating fstab using {fstab_location} as reference...")
 			fstab = Fstab(fstab_location)
 			break
 
@@ -84,7 +130,7 @@ class DeviceTree:
 
 		# Search for init rc files
 		self.init_rcs: List[Path] = []
-		for init_rc_path in [self.image_info.ramdisk / location for location in INIT_RC_LOCATIONS]:
+		for init_rc_path in [ramdisk_dir / location for location in INIT_RC_LOCATIONS]:
 			if not init_rc_path.is_dir():
 				continue
 
@@ -168,9 +214,44 @@ class DeviceTree:
 		                       device_info=self.device_info,
 		                       fstab=self.fstab,
 		                       image_info=self.image_info,
+		                       is_mtk=self.is_mtk,
+		                       is_vendor_boot=self.is_vendor_boot,
+		                       vendor_boot_info=self.vendor_boot_info,
 		                       version=version,
 		                       **kwargs)
 
 	def cleanup(self):
 		# Cleanup
-		self.aik_manager.cleanup()
+		if self.aik_manager is not None:
+			self.aik_manager.cleanup()
+		if self._vendor_boot_tmpdir is not None:
+			self._vendor_boot_tmpdir.cleanup()
+
+
+class _VendorBootImageInfoAdapter:
+	"""
+	Adapts a VendorBootImageInfo to the AIKImageInfo interface expected
+	by templates, so that both vendor_boot and standard images can be
+	rendered with the same templates.
+	"""
+	def __init__(self, vb: VendorBootImageInfo):
+		self._vb = vb
+		self.kernel = None
+		self.dt = None
+		self.dtb = vb.dtb
+		self.dtbo = None
+		self.ramdisk = vb.merged_ramdisk
+		self.base_address = None
+		self.board_name = vb.product_name or None
+		self.cmdline = vb.cmdline or None
+		self.dtb_offset = None
+		self.header_version = str(vb.header_version)
+		self.image_type = "VENDOR_BOOT"
+		self.kernel_offset = None
+		self.origsize = None
+		self.os_version = None
+		self.pagesize = str(vb.page_size) if vb.page_size else None
+		self.ramdisk_compression = None
+		self.ramdisk_offset = None
+		self.sigtype = None
+		self.tags_offset = None
