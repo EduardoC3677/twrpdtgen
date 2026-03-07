@@ -9,21 +9,22 @@ DEVICE_PATH := device/motorola/lamu
 
 # For building with minimal manifest
 ALLOW_MISSING_DEPENDENCIES := true
+BUILD_BROKEN_DUP_RULES := true
+BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
 
 # A/B
 AB_OTA_UPDATER := true
 AB_OTA_PARTITIONS += \
-    vendor_dlkm \
-    system \
-    product \
-    system_ext \
-    system_dlkm \
     vendor \
     vbmeta_system \
     vbmeta_vendor \
     boot \
-    odm_dlkm
-BOARD_USES_RECOVERY_AS_BOOT := true
+    odm_dlkm \
+    vendor_dlkm \
+    system \
+    product \
+    system_ext \
+    system_dlkm
 
 # Architecture
 TARGET_ARCH := arm64
@@ -45,43 +46,57 @@ TARGET_SCREEN_DENSITY := 280
 TARGET_USES_VULKAN := true
 
 # Kernel
-BOARD_BOOTIMG_HEADER_VERSION := 4
-BOARD_KERNEL_CMDLINE := bootopt=64S3,32N2,64N2 video=HDMI-A-1:1280x800@60
-BOARD_KERNEL_PAGESIZE := 4096
-BOARD_MKBOOTIMG_ARGS += --header_version $(BOARD_BOOTIMG_HEADER_VERSION)
-BOARD_KERNEL_IMAGE_NAME := Image
-BOARD_INCLUDE_DTB_IN_BOOTIMG := true
-TARGET_KERNEL_CONFIG := lamu_defconfig
-TARGET_KERNEL_SOURCE := kernel/motorola/lamu
-
-# Kernel - prebuilt
-TARGET_FORCE_PREBUILT_KERNEL := true
-ifeq ($(TARGET_FORCE_PREBUILT_KERNEL),true)
-TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
-TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
-BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
-BOARD_INCLUDE_DTB_IN_BOOTIMG := 
-endif
-
-# Vendor Boot
+TARGET_NO_KERNEL := true
+TARGET_KERNEL_ARCH := arm64
+TARGET_KERNEL_HEADER_ARCH := arm64
+BOARD_RAMDISK_USE_LZ4 := true
+BOARD_KERNEL_SEPARATED_DTBO := true
 BOARD_BOOT_HEADER_VERSION := 4
-BOARD_INCLUDE_VENDOR_RAMDISK := true
 BOARD_VENDOR_CMDLINE := bootopt=64S3,32N2,64N2 video=HDMI-A-1:1280x800@60
-BOARD_PREBUILT_VENDOR_DTBIMAGE := $(DEVICE_PATH)/prebuilt/dtb.img
-# This image has 2 vendor ramdisks
-# Ramdisk 0: type=1, name="", size=7133658
-# Ramdisk 1: type=2, name="recovery", size=17547266
+BOARD_PAGE_SIZE := 4096
+TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
+BOARD_MKBOOTIMG_ARGS += --pagesize $(BOARD_PAGE_SIZE) --board ""
+BOARD_MKBOOTIMG_ARGS += --header_version $(BOARD_BOOT_HEADER_VERSION)
+BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
+BOARD_MKBOOTIMG_ARGS += --vendor_cmdline $(BOARD_VENDOR_CMDLINE)
+
+# Assert
+TARGET_OTA_ASSERT_DEVICE := lamu
 
 # Partitions
 BOARD_FLASH_BLOCK_SIZE := 262144 # (BOARD_KERNEL_PAGESIZE * 64)
+BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 67108864
 BOARD_HAS_LARGE_FILESYSTEM := true
-BOARD_SYSTEMIMAGE_PARTITION_TYPE := ext4
-BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_USES_METADATA_PARTITION := true
+
+# Filesystem
+BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_PRODUCTIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
+BOARD_ODM_DLKMIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_VENDOR_DLKMIMAGE_FILE_SYSTEM_TYPE := ext4
+TARGET_USERIMAGES_USE_EXT4 := true
+TARGET_USERIMAGES_USE_F2FS := true
+
+# Copyout
+TARGET_COPY_OUT_SYSTEM := system
 TARGET_COPY_OUT_VENDOR := vendor
+TARGET_COPY_OUT_PRODUCT := product
+TARGET_COPY_OUT_ODM_DLKM := odm_dlkm
+TARGET_COPY_OUT_VENDOR_DLKM := vendor_dlkm
+
+# Dynamic partitions
 BOARD_SUPER_PARTITION_SIZE := 9126805504 # TODO: Fix hardcoded value
 BOARD_SUPER_PARTITION_GROUPS := motorola_dynamic_partitions
-BOARD_MOTOROLA_DYNAMIC_PARTITIONS_PARTITION_LIST := system system system_ext system_ext vendor vendor product product vendor_dlkm vendor_dlkm odm_dlkm odm_dlkm system_dlkm system_dlkm
+BOARD_MOTOROLA_DYNAMIC_PARTITIONS_PARTITION_LIST := \
+    system \
+    system_ext \
+    vendor \
+    product \
+    vendor_dlkm \
+    odm_dlkm \
+    system_dlkm
 BOARD_MOTOROLA_DYNAMIC_PARTITIONS_SIZE := 9122611200 # TODO: Fix hardcoded value
 
 # Platform
@@ -92,9 +107,11 @@ BOARD_HAS_MTK_HARDWARE := true
 BOARD_USES_MTK_HARDWARE := true
 
 # Recovery
+TARGET_NO_RECOVERY := true
+BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
+BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
+TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
 TARGET_RECOVERY_PIXEL_FORMAT := BGRA_8888
-TARGET_USERIMAGES_USE_EXT4 := true
-TARGET_USERIMAGES_USE_F2FS := true
 
 # Security patch level
 VENDOR_SECURITY_PATCH := 2024-11-05
@@ -107,10 +124,21 @@ PLATFORM_VERSION := 16.1.0
 # TWRP Configuration
 TW_THEME := portrait_hdpi
 TW_EXTRA_LANGUAGES := true
-TW_SCREEN_BLANK_ON_BOOT := true
 TW_INPUT_BLACKLIST := "hbtp_vm"
-TW_USE_TOOLBOX := true
 TW_INCLUDE_REPACKTOOLS := true
-TW_LOAD_VENDOR_MODULES := "modules.load"
-TW_INCLUDE_LIBRESETPROP := true
 TW_INCLUDE_RESETPROP := true
+TW_INCLUDE_LIBRESETPROP := true
+TW_INCLUDE_NTFS_3G := true
+TW_INCLUDE_FUSE_EXFAT := true
+TW_EXCLUDE_DEFAULT_USB_INIT := true
+TARGET_USES_MKE2FS := true
+RECOVERY_SDCARD_ON_DATA := true
+
+# Debugging
+TARGET_USES_LOGD := true
+TWRP_INCLUDE_LOGCAT := true
+
+TW_NO_FASTBOOT_BOOT := true
+TW_INCLUDE_FASTBOOTD := true
+TW_LOAD_VENDOR_BOOT_MODULES := true
+TW_LOAD_VENDOR_MODULES := "modules.load"

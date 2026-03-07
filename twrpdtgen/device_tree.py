@@ -14,7 +14,6 @@ from sebaubuntu_libs.libandroid.fstab import Fstab
 from sebaubuntu_libs.libandroid.props import BuildProp
 from sebaubuntu_libs.liblogging import LOGD
 from shutil import copyfile, rmtree
-from stat import S_IRWXU, S_IRGRP, S_IROTH
 from tempfile import TemporaryDirectory
 from twrpdtgen import __version__ as version
 from twrpdtgen.templates import render_template
@@ -157,15 +156,9 @@ class DeviceTree:
 		self._render_template(device_tree_folder, "AndroidProducts.mk")
 		self._render_template(device_tree_folder, "BoardConfig.mk")
 		self._render_template(device_tree_folder, "device.mk")
-		self._render_template(device_tree_folder, "extract-files.sh")
 		self._render_template(device_tree_folder, "twrp_device.mk", out_file=f"twrp_{self.device_info.codename}.mk")
 		self._render_template(device_tree_folder, "README.md")
-		self._render_template(device_tree_folder, "setup-makefiles.sh")
 		self._render_template(device_tree_folder, "vendorsetup.sh")
-
-		# Set permissions
-		chmod(device_tree_folder / "extract-files.sh", S_IRWXU | S_IRGRP | S_IROTH)
-		chmod(device_tree_folder / "setup-makefiles.sh", S_IRWXU | S_IRGRP | S_IROTH)
 
 		LOGD("Copying kernel...")
 		if self.image_info.kernel is not None:
@@ -178,11 +171,71 @@ class DeviceTree:
 			copyfile(self.image_info.dtbo, prebuilt_path / "dtbo.img")
 
 		LOGD("Copying fstab...")
-		(device_tree_folder / "recovery.fstab").write_text(self.fstab.format(twrp=True))
+		if self.is_vendor_boot:
+			# For vendor_boot devices, fstab goes in recovery/root/system/etc/
+			fstab_dir = recovery_root_path / "system" / "etc"
+			fstab_dir.mkdir(parents=True, exist_ok=True)
+			(fstab_dir / "recovery.fstab").write_text(self.fstab.format(twrp=True))
+		else:
+			(device_tree_folder / "recovery.fstab").write_text(self.fstab.format(twrp=True))
+
+		# Copy first_stage_ramdisk fstab if available (vendor_boot)
+		if self.is_vendor_boot and self.vendor_boot_info and self.vendor_boot_info.merged_ramdisk:
+			ramdisk = self.vendor_boot_info.merged_ramdisk
+			fsr_dir = ramdisk / "first_stage_ramdisk"
+			if fsr_dir.is_dir():
+				for fstab_file in fsr_dir.iterdir():
+					if fstab_file.name.startswith("fstab."):
+						dest_fsr = recovery_root_path / "first_stage_ramdisk"
+						dest_fsr.mkdir(parents=True, exist_ok=True)
+						copyfile(fstab_file, dest_fsr / fstab_file.name, follow_symlinks=True)
+						LOGD(f"Copied first_stage_ramdisk/{fstab_file.name}")
 
 		LOGD("Copying init scripts...")
 		for init_rc in self.init_rcs:
 			copyfile(init_rc, recovery_root_path / init_rc.name, follow_symlinks=True)
+
+		# Copy additional blobs and files from vendor_boot ramdisk
+		if self.is_vendor_boot and self.vendor_boot_info and self.vendor_boot_info.merged_ramdisk:
+			ramdisk = self.vendor_boot_info.merged_ramdisk
+
+			# Copy vendor kernel modules from vendor/lib/modules or lib/modules
+			for modules_src in [ramdisk / "vendor" / "lib" / "modules",
+			                    ramdisk / "lib" / "modules"]:
+				if modules_src.is_dir():
+					modules_dest = recovery_root_path / "vendor" / "lib" / "modules"
+					modules_dest.mkdir(parents=True, exist_ok=True)
+					module_count = 0
+					for ko_file in modules_src.iterdir():
+						if ko_file.name.endswith(".ko") or ko_file.name in ("modules.load", "modules.dep",
+						                                                     "modules.alias", "modules.softdep"):
+							copyfile(ko_file, modules_dest / ko_file.name, follow_symlinks=True)
+							module_count += 1
+					if module_count > 0:
+						LOGD(f"Copied {module_count} vendor modules from {modules_src.relative_to(ramdisk)}")
+					break
+
+			# Copy vendor firmware blobs (touchscreen firmware, etc.)
+			firmware_src = ramdisk / "vendor" / "firmware"
+			if firmware_src.is_dir():
+				firmware_dest = recovery_root_path / "vendor" / "firmware"
+				firmware_dest.mkdir(parents=True, exist_ok=True)
+				fw_count = 0
+				for fw_file in firmware_src.iterdir():
+					if fw_file.is_file():
+						copyfile(fw_file, firmware_dest / fw_file.name, follow_symlinks=True)
+						fw_count += 1
+				if fw_count > 0:
+					LOGD(f"Copied {fw_count} vendor firmware blobs")
+
+			# Copy system/etc config files (cgroups.json, task_profiles.json, etc.)
+			sys_etc_src = ramdisk / "system" / "etc"
+			if sys_etc_src.is_dir():
+				sys_etc_dest = recovery_root_path / "system" / "etc"
+				sys_etc_dest.mkdir(parents=True, exist_ok=True)
+				for cfg_file in sys_etc_src.iterdir():
+					if cfg_file.is_file() and cfg_file.name != "recovery.fstab":
+						copyfile(cfg_file, sys_etc_dest / cfg_file.name, follow_symlinks=True)
 
 		if not git:
 			return device_tree_folder
