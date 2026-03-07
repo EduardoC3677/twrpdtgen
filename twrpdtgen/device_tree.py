@@ -39,6 +39,30 @@ INIT_RC_LOCATIONS = [Path()]
 INIT_RC_LOCATIONS += [Path() / dir / "etc" / "init"
                       for dir in ["system", "vendor"]]
 
+# .rc files that are needed in the device tree (others are handled by the build system)
+NEEDED_RC_PATTERNS = (
+	"init.recovery.",   # Platform-specific recovery init (init.recovery.mt6768.rc, init.recovery.qcom.rc)
+	"init.recovery.usb",  # USB gadget configuration
+)
+NEEDED_RC_NAMES = {
+	"mtk-plpath-utils.rc",  # MTK preloader path utils service
+	"snapuserd.rc",         # Virtual A/B snapshot daemon
+}
+
+# Recovery-specific service binaries to extract from ramdisk
+# (standard Android utilities like toybox/sh are provided by the TWRP build)
+# MTK binaries like mtk_plpath_utils are provided by the build system
+RECOVERY_SERVICE_BINS = {
+	# Qualcomm
+	"qseecomd",
+	"android.hardware.gatekeeper@1.0-service-qti",
+	"android.hardware.keymaster@4.1-service-qti",
+	"android.hardware.keymaster@4.0-service-qti",
+	"android.hardware.weaver@1.0-service",
+	# Generic
+	"hw_keymaster_v2", "teed",
+}
+
 # Known MTK (MediaTek) platform prefixes
 MTK_PLATFORM_PREFIXES = ("mt", "MT")
 
@@ -129,14 +153,19 @@ class DeviceTree:
 
 		self.fstab = fstab
 
-		# Search for init rc files
+		# Search for init rc files - only keep recovery-relevant ones
 		self.init_rcs: List[Path] = []
 		for init_rc_path in [ramdisk_dir / location for location in INIT_RC_LOCATIONS]:
 			if not init_rc_path.is_dir():
 				continue
 
-			self.init_rcs += [init_rc for init_rc in init_rc_path.iterdir()
-			                  if init_rc.name.endswith(".rc") and init_rc.name != "init.rc"]
+			for init_rc in init_rc_path.iterdir():
+				if not init_rc.name.endswith(".rc") or init_rc.name == "init.rc":
+					continue
+				# Only include .rc files that match known needed patterns
+				if (init_rc.name in NEEDED_RC_NAMES
+				    or any(init_rc.name.startswith(p) for p in NEEDED_RC_PATTERNS)):
+					self.init_rcs.append(init_rc)
 
 	def dump_to_folder(self, output_path: Path, git: bool = False) -> Path:
 		device_tree_folder = output_path / self.device_info.manufacturer / self.device_info.codename
@@ -244,33 +273,12 @@ class DeviceTree:
 					if cfg_file.is_file() and cfg_file.name != "recovery.fstab":
 						copyfile(cfg_file, sys_etc_dest / cfg_file.name, follow_symlinks=True)
 
-			# Copy system/etc/vintf/ manifest files
-			vintf_src = ramdisk / "system" / "etc" / "vintf"
-			if vintf_src.is_dir():
-				self._copy_dir_recursive(vintf_src,
-				                         recovery_root_path / "system" / "etc" / "vintf")
-
-			# Copy vendor/etc/ (vintf manifests, config files for Qualcomm)
-			vendor_etc_src = ramdisk / "vendor" / "etc"
-			if vendor_etc_src.is_dir():
-				self._copy_dir_recursive(vendor_etc_src,
-				                         recovery_root_path / "vendor" / "etc")
-
 			# Copy system/bin/ recovery-specific service binaries
-			# These are vendor-specific HAL services needed for TWRP (e.g. Qualcomm qseecomd)
-			# Standard Android binaries (toybox, etc.) are provided by the TWRP build
-			RECOVERY_SERVICE_BINS = {
-				"qseecomd", "android.hardware.gatekeeper@1.0-service-qti",
-				"android.hardware.keymaster@4.1-service-qti",
-				"android.hardware.keymaster@4.0-service-qti",
-				"android.hardware.weaver@1.0-service",
-				"hw_keymaster_v2", "teed",
-				"mtk_plpath_utils",
-			}
+			# Only vendor HAL services needed for TWRP; standard utils are in the build
 			sys_bin_src = ramdisk / "system" / "bin"
+			bin_count = 0
 			if sys_bin_src.is_dir():
 				sys_bin_dest = recovery_root_path / "system" / "bin"
-				bin_count = 0
 				for bin_file in sys_bin_src.iterdir():
 					if bin_file.is_file() and bin_file.name in RECOVERY_SERVICE_BINS:
 						sys_bin_dest.mkdir(parents=True, exist_ok=True)
@@ -279,14 +287,27 @@ class DeviceTree:
 				if bin_count > 0:
 					LOGD(f"Copied {bin_count} recovery service binaries")
 
-			# Copy vendor/lib64/ shared libraries (Qualcomm HAL blobs for recovery)
-			# Only copy if vendor-specific service binaries were found
-			for libdir_name in ["vendor/lib64", "vendor/lib64/hw"]:
-				libdir_src = ramdisk / Path(libdir_name)
-				if libdir_src.is_dir() and any(f.name.endswith(".so") for f in libdir_src.iterdir() if f.is_file()):
-					self._copy_dir_recursive(libdir_src,
-					                         recovery_root_path / Path(libdir_name))
-					LOGD(f"Copied vendor libraries from {libdir_name}")
+			# Copy Qualcomm-specific HAL dependencies only when service binaries are present
+			if bin_count > 0:
+				# Copy system/etc/vintf/ manifest files (HAL declarations)
+				vintf_src = ramdisk / "system" / "etc" / "vintf"
+				if vintf_src.is_dir():
+					self._copy_dir_recursive(vintf_src,
+					                         recovery_root_path / "system" / "etc" / "vintf")
+
+				# Copy vendor/etc/ (vintf manifests, config files)
+				vendor_etc_src = ramdisk / "vendor" / "etc"
+				if vendor_etc_src.is_dir():
+					self._copy_dir_recursive(vendor_etc_src,
+					                         recovery_root_path / "vendor" / "etc")
+
+				# Copy vendor/lib64/ shared libraries (HAL blob dependencies)
+				for libdir_name in ["vendor/lib64", "vendor/lib64/hw"]:
+					libdir_src = ramdisk / Path(libdir_name)
+					if libdir_src.is_dir() and any(f.name.endswith(".so") for f in libdir_src.iterdir() if f.is_file()):
+						self._copy_dir_recursive(libdir_src,
+						                         recovery_root_path / Path(libdir_name))
+						LOGD(f"Copied vendor libraries from {libdir_name}")
 
 		if not git:
 			return device_tree_folder
