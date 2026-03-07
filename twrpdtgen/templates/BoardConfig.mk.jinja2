@@ -281,6 +281,6 @@ TW_NO_FASTBOOT_BOOT := true
 TW_INCLUDE_FASTBOOTD := true
 TW_LOAD_VENDOR_BOOT_MODULES := true
 {% endif %}
-{% if is_mtk %}
+{% if modules_in_vendor %}
 TW_LOAD_VENDOR_MODULES := "modules.load"
 {% endif %}

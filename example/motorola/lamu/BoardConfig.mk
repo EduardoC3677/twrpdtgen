@@ -15,8 +15,6 @@ BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
 # A/B
 AB_OTA_UPDATER := true
 AB_OTA_PARTITIONS += \
-    system \
-    product \
     system_ext \
     system_dlkm \
     vendor \
@@ -24,7 +22,9 @@ AB_OTA_PARTITIONS += \
     vbmeta_vendor \
     boot \
     odm_dlkm \
-    vendor_dlkm
+    vendor_dlkm \
+    system \
+    product
 
 # Architecture
 TARGET_ARCH := arm64
@@ -141,4 +141,3 @@ TWRP_INCLUDE_LOGCAT := true
 TW_NO_FASTBOOT_BOOT := true
 TW_INCLUDE_FASTBOOTD := true
 TW_LOAD_VENDOR_BOOT_MODULES := true
-TW_LOAD_VENDOR_MODULES := "modules.load"

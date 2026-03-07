@@ -167,6 +167,16 @@ class DeviceTree:
 				    or any(init_rc.name.startswith(p) for p in NEEDED_RC_PATTERNS)):
 					self.init_rcs.append(init_rc)
 
+		# Determine kernel modules location in the ramdisk
+		# (vendor/lib/modules or lib/modules — we preserve the original path)
+		self.modules_in_vendor = False
+		if self.is_vendor_boot and self.vendor_boot_info and self.vendor_boot_info.merged_ramdisk:
+			merged = self.vendor_boot_info.merged_ramdisk
+			if (merged / "vendor" / "lib" / "modules").is_dir():
+				self.modules_in_vendor = True
+			elif (merged / "lib" / "modules").is_dir():
+				self.modules_in_vendor = False
+
 	def dump_to_folder(self, output_path: Path, git: bool = False) -> Path:
 		device_tree_folder = output_path / self.device_info.manufacturer / self.device_info.codename
 		prebuilt_path = device_tree_folder / "prebuilt"
@@ -235,20 +245,24 @@ class DeviceTree:
 		if self.is_vendor_boot and self.vendor_boot_info and self.vendor_boot_info.merged_ramdisk:
 			ramdisk = self.vendor_boot_info.merged_ramdisk
 
-			# Copy vendor kernel modules from vendor/lib/modules or lib/modules
-			for modules_src in [ramdisk / "vendor" / "lib" / "modules",
-			                    ramdisk / "lib" / "modules"]:
+			# Copy kernel modules preserving their original path
+			# (lib/modules/ or vendor/lib/modules/ depending on the image)
+			self._modules_path = None  # Track for BoardConfig template
+			for modules_rel in ["vendor/lib/modules", "lib/modules"]:
+				modules_src = ramdisk / modules_rel
 				if modules_src.is_dir():
-					modules_dest = recovery_root_path / "vendor" / "lib" / "modules"
+					modules_dest = recovery_root_path / modules_rel
 					modules_dest.mkdir(parents=True, exist_ok=True)
 					module_count = 0
 					for ko_file in modules_src.iterdir():
 						if ko_file.name.endswith(".ko") or ko_file.name in ("modules.load", "modules.dep",
-						                                                     "modules.alias", "modules.softdep"):
+						                                                     "modules.alias", "modules.softdep",
+						                                                     "modules.load.recovery"):
 							copyfile(ko_file, modules_dest / ko_file.name, follow_symlinks=True)
 							module_count += 1
 					if module_count > 0:
-						LOGD(f"Copied {module_count} vendor modules from {modules_src.relative_to(ramdisk)}")
+						self._modules_path = modules_rel
+						LOGD(f"Copied {module_count} modules to {modules_rel}")
 					break
 
 			# Copy vendor firmware blobs (touchscreen firmware, etc.)
@@ -309,6 +323,14 @@ class DeviceTree:
 						                         recovery_root_path / Path(libdir_name))
 						LOGD(f"Copied vendor libraries from {libdir_name}")
 
+		# Copy MTK bootctrl sources for MediaTek devices
+		if self.is_mtk:
+			bootctrl_src = Path(__file__).parent / "templates" / "bootctrl"
+			if bootctrl_src.is_dir():
+				bootctrl_dest = device_tree_folder / "bootctrl"
+				self._copy_dir_recursive(bootctrl_src, bootctrl_dest)
+				LOGD("Copied MTK bootctrl sources")
+
 		if not git:
 			return device_tree_folder
 
@@ -354,6 +376,7 @@ class DeviceTree:
 		                       image_info=self.image_info,
 		                       is_mtk=self.is_mtk,
 		                       is_vendor_boot=self.is_vendor_boot,
+		                       modules_in_vendor=self.modules_in_vendor,
 		                       vendor_boot_info=self.vendor_boot_info,
 		                       version=version,
 		                       **kwargs)
