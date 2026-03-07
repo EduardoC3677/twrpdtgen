@@ -176,6 +176,13 @@ class DeviceTree:
 			fstab_dir = recovery_root_path / "system" / "etc"
 			fstab_dir.mkdir(parents=True, exist_ok=True)
 			(fstab_dir / "recovery.fstab").write_text(self.fstab.format(twrp=True))
+			# Generate twrp.flags for vendor_boot devices
+			twrp_flags = self.fstab.format_twrp_flags(
+				is_ab=self.device_info.device_is_ab,
+				is_mtk=self.is_mtk,
+			)
+			(fstab_dir / "twrp.flags").write_text(twrp_flags)
+			LOGD("Generated twrp.flags")
 		else:
 			(device_tree_folder / "recovery.fstab").write_text(self.fstab.format(twrp=True))
 
@@ -237,6 +244,50 @@ class DeviceTree:
 					if cfg_file.is_file() and cfg_file.name != "recovery.fstab":
 						copyfile(cfg_file, sys_etc_dest / cfg_file.name, follow_symlinks=True)
 
+			# Copy system/etc/vintf/ manifest files
+			vintf_src = ramdisk / "system" / "etc" / "vintf"
+			if vintf_src.is_dir():
+				self._copy_dir_recursive(vintf_src,
+				                         recovery_root_path / "system" / "etc" / "vintf")
+
+			# Copy vendor/etc/ (vintf manifests, config files for Qualcomm)
+			vendor_etc_src = ramdisk / "vendor" / "etc"
+			if vendor_etc_src.is_dir():
+				self._copy_dir_recursive(vendor_etc_src,
+				                         recovery_root_path / "vendor" / "etc")
+
+			# Copy system/bin/ recovery-specific service binaries
+			# These are vendor-specific HAL services needed for TWRP (e.g. Qualcomm qseecomd)
+			# Standard Android binaries (toybox, etc.) are provided by the TWRP build
+			RECOVERY_SERVICE_BINS = {
+				"qseecomd", "android.hardware.gatekeeper@1.0-service-qti",
+				"android.hardware.keymaster@4.1-service-qti",
+				"android.hardware.keymaster@4.0-service-qti",
+				"android.hardware.weaver@1.0-service",
+				"hw_keymaster_v2", "teed",
+				"mtk_plpath_utils",
+			}
+			sys_bin_src = ramdisk / "system" / "bin"
+			if sys_bin_src.is_dir():
+				sys_bin_dest = recovery_root_path / "system" / "bin"
+				bin_count = 0
+				for bin_file in sys_bin_src.iterdir():
+					if bin_file.is_file() and bin_file.name in RECOVERY_SERVICE_BINS:
+						sys_bin_dest.mkdir(parents=True, exist_ok=True)
+						copyfile(bin_file, sys_bin_dest / bin_file.name, follow_symlinks=True)
+						bin_count += 1
+				if bin_count > 0:
+					LOGD(f"Copied {bin_count} recovery service binaries")
+
+			# Copy vendor/lib64/ shared libraries (Qualcomm HAL blobs for recovery)
+			# Only copy if vendor-specific service binaries were found
+			for libdir_name in ["vendor/lib64", "vendor/lib64/hw"]:
+				libdir_src = ramdisk / Path(libdir_name)
+				if libdir_src.is_dir() and any(f.name.endswith(".so") for f in libdir_src.iterdir() if f.is_file()):
+					self._copy_dir_recursive(libdir_src,
+					                         recovery_root_path / Path(libdir_name))
+					LOGD(f"Copied vendor libraries from {libdir_name}")
+
 		if not git:
 			return device_tree_folder
 
@@ -261,6 +312,17 @@ class DeviceTree:
 		git_repo.index.commit(commit_message)
 
 		return device_tree_folder
+
+	@staticmethod
+	def _copy_dir_recursive(src: Path, dest: Path):
+		"""Copy a directory tree, skipping symlinks that point outside src."""
+		dest.mkdir(parents=True, exist_ok=True)
+		for item in src.iterdir():
+			target = dest / item.name
+			if item.is_dir():
+				DeviceTree._copy_dir_recursive(item, target)
+			elif item.is_file():
+				copyfile(item, target, follow_symlinks=True)
 
 	def _render_template(self, *args, comment_prefix: str = "#", **kwargs):
 		return render_template(*args,
