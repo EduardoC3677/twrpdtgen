@@ -12,7 +12,8 @@ from subprocess import check_output, STDOUT, CalledProcessError
 from tempfile import TemporaryDirectory
 from typing import Optional
 
-# Path to the bundled AIK-Linux directory (shipped with the repository)
+# Path to the bundled AIK-Linux directory (shipped with the repository).
+# Resolves: libaik/ -> sebaubuntu_libs/ -> libs/ -> twrpdtgen/ -> aik/
 BUNDLED_AIK_PATH = Path(__file__).parent.parent.parent.parent / "aik"
 
 ALLOWED_OS = [

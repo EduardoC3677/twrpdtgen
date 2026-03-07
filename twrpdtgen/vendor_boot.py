@@ -214,8 +214,11 @@ def _extract_cpio_gz(archive_path: Path, dest_dir: Path) -> None:
 
     Supports gzip, lz4, lzma/xz compression, or raw cpio.
     """
+    import logging
     import subprocess
     import tempfile as _tf
+
+    logger = logging.getLogger(__name__)
 
     raw_data = archive_path.read_bytes()
 
@@ -228,12 +231,19 @@ def _extract_cpio_gz(archive_path: Path, dest_dir: Path) -> None:
         tmp_path = Path(tmp.name)
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["cpio", "-idm", "--no-absolute-filenames", "-F", str(tmp_path)],
             cwd=str(dest_dir),
             check=False,
             capture_output=True,
         )
+        if result.returncode != 0:
+            logger.warning(
+                "cpio extraction returned code %d for %s: %s",
+                result.returncode,
+                archive_path.name,
+                result.stderr.decode(errors="replace").strip(),
+            )
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -242,8 +252,6 @@ def _decompress_ramdisk(raw: bytes) -> bytes:
     """Detect compression format and decompress accordingly."""
     import gzip
     import lzma
-    import subprocess
-    import tempfile as _tf
 
     # LZ4 frame magic: 0x04224D18, LZ4 legacy magic: 0x02214C18
     if raw[:4] in (b'\x04\x22\x4d\x18', b'\x02\x21\x4c\x18'):
@@ -253,7 +261,7 @@ def _decompress_ramdisk(raw: bytes) -> bytes:
     if raw[:2] == b'\x1f\x8b':
         try:
             return gzip.decompress(raw)
-        except Exception:
+        except (OSError, EOFError):
             pass
 
     # lzma / xz
@@ -261,7 +269,7 @@ def _decompress_ramdisk(raw: bytes) -> bytes:
     # LZMA magic: usually starts with 0x5D
     try:
         return lzma.decompress(raw)
-    except Exception:
+    except lzma.LZMAError:
         pass
 
     # Return raw data and let cpio try anyway

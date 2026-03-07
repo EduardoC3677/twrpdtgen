@@ -151,7 +151,7 @@ BOARD_FLASH_BLOCK_SIZE := {{ image_info.pagesize|int * 64 }} # (BOARD_KERNEL_PAG
 {% endif %}
 {% if image_info.origsize %}
 BOARD_BOOTIMAGE_PARTITION_SIZE := {{ image_info.origsize }}
-{% if not device_info.device_is_ab %}
+{% if not device_info.device_is_ab and not is_vendor_boot %}
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := {{ image_info.origsize }}
 {% endif %}
 {% endif %}

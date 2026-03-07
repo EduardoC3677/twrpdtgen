@@ -46,6 +46,8 @@ MTK_PLATFORM_PREFIXES = ("mt", "MT")
 
 def _is_mtk_platform(platform: str) -> bool:
 	"""Return True if *platform* looks like a MediaTek SoC name."""
+	if not platform:
+		return False
 	return any(platform.startswith(p) for p in MTK_PLATFORM_PREFIXES)
 
 
