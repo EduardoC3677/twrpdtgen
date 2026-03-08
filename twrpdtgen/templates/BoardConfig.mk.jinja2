@@ -238,6 +238,11 @@ BOARD_INCLUDE_RECOVERY_DTBO := true
 TARGET_RECOVERY_PIXEL_FORMAT := {{ device_info.device_pixel_format }}
 {% endif %}
 
+{% if has_system_prop is defined and has_system_prop %}
+# Properties
+TARGET_SYSTEM_PROP += $(DEVICE_PATH)/system.prop
+
+{% endif %}
 {% if device_info.vendor_build_security_patch %}
 # Security patch level
 VENDOR_SECURITY_PATCH := {{ device_info.vendor_build_security_patch }}
@@ -271,6 +276,15 @@ TW_INCLUDE_FUSE_EXFAT := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true
 TARGET_USES_MKE2FS := true
 RECOVERY_SDCARD_ON_DATA := true
+
+# Crypto
+TW_INCLUDE_CRYPTO := true
+TW_INCLUDE_CRYPTO_FBE := true
+TW_INCLUDE_FBE_METADATA_DECRYPT := true
+TW_USE_FSCRYPT_POLICY := 2
+{% if is_mtk %}
+TW_FORCE_KEYMASTER_VER := true
+{% endif %}
 
 # Debugging
 TARGET_USES_LOGD := true

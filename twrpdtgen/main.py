@@ -22,6 +22,14 @@ def main():
 	parser.add_argument("-o", "--output", type=Path, default=current_path / "output",
 						help="custom output folder")
 
+	# Optional partition images for enhanced extraction
+	parser.add_argument("--vendor", type=Path, default=None,
+						help="path to vendor partition image (optional, extracts "
+						     "touchscreen firmware and additional device info)")
+	parser.add_argument("--system", type=Path, default=None,
+						help="path to system partition image (optional, extracts "
+						     "additional build properties)")
+
 	# Optional DeviceTree arguments
 	parser.add_argument("--git", action='store_true',
 						help="create a git repo after the generation")
@@ -34,7 +42,11 @@ def main():
 
 	setup_logging(args.debug)
 
-	device_tree = DeviceTree(image=args.image)
+	device_tree = DeviceTree(
+		image=args.image,
+		vendor_image=args.vendor,
+		system_image=args.system,
+	)
 	folder = device_tree.dump_to_folder(args.output, git=args.git)
 
 	print(f"\nDone! You can find the device tree in {folder}")

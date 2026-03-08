@@ -15,16 +15,16 @@ BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
 # A/B
 AB_OTA_UPDATER := true
 AB_OTA_PARTITIONS += \
+    product \
+    system_ext \
+    system_dlkm \
     vendor \
     vbmeta_system \
     vbmeta_vendor \
     boot \
     odm_dlkm \
     vendor_dlkm \
-    system \
-    product \
-    system_ext \
-    system_dlkm
+    system
 
 # Architecture
 TARGET_ARCH := arm64
@@ -113,6 +113,9 @@ BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
 TARGET_RECOVERY_PIXEL_FORMAT := BGRA_8888
 
+# Properties
+TARGET_SYSTEM_PROP += $(DEVICE_PATH)/system.prop
+
 # Security patch level
 VENDOR_SECURITY_PATCH := 2024-11-05
 
@@ -133,6 +136,13 @@ TW_INCLUDE_FUSE_EXFAT := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true
 TARGET_USES_MKE2FS := true
 RECOVERY_SDCARD_ON_DATA := true
+
+# Crypto
+TW_INCLUDE_CRYPTO := true
+TW_INCLUDE_CRYPTO_FBE := true
+TW_INCLUDE_FBE_METADATA_DECRYPT := true
+TW_USE_FSCRYPT_POLICY := 2
+TW_FORCE_KEYMASTER_VER := true
 
 # Debugging
 TARGET_USES_LOGD := true

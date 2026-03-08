@@ -22,6 +22,7 @@ from twrpdtgen.vendor_boot import (
 	is_vendor_boot_image,
 	VendorBootImageInfo,
 )
+from twrpdtgen.image_mount import extract_vendor_files, extract_system_files, collect_system_props
 from typing import List, Optional
 
 BUILDPROP_LOCATIONS = [Path() / "default.prop",
@@ -87,9 +88,21 @@ class DeviceTree:
 	It initialize a basic device tree structure
 	and save the location of some important files
 	"""
-	def __init__(self, image: Path):
-		"""Initialize the device tree class."""
+	def __init__(self, image: Path,
+	             vendor_image: Optional[Path] = None,
+	             system_image: Optional[Path] = None):
+		"""Initialize the device tree class.
+
+		Args:
+			image: Path to a recovery, boot, or vendor_boot image.
+			vendor_image: Optional path to vendor partition image for
+				extracting touchscreen firmware and additional device info.
+			system_image: Optional path to system partition image for
+				extracting additional build properties.
+		"""
 		self.image = image
+		self.vendor_image = vendor_image
+		self.system_image = system_image
 
 		self.current_year = str(datetime.now().year)
 
@@ -136,6 +149,43 @@ class DeviceTree:
 				continue
 
 			self.build_prop.import_props(build_prop)
+
+		# Import additional build properties from system/vendor images
+		# (only build.prop at this stage; full file extraction happens in dump_to_folder)
+		if self.system_image and self.system_image.is_file():
+			try:
+				# Quick import of system build.prop only
+				from twrpdtgen.image_mount import MountedImage
+				import subprocess as _sp
+				with MountedImage(self.system_image) as mnt:
+					for bp in [mnt.path / "system" / "build.prop", mnt.path / "build.prop"]:
+						if bp.is_file():
+							content = _sp.run(["sudo", "cat", str(bp)],
+							                  capture_output=True, text=True, check=True).stdout
+							tmp = Path(mnt._tmpdir.name) / "sys_bp.prop"
+							tmp.write_text(content)
+							self.build_prop.import_props(tmp)
+							LOGD("Imported system build.prop")
+							break
+			except Exception as e:
+				LOGD(f"Warning: failed to import system build.prop: {e}")
+
+		if self.vendor_image and self.vendor_image.is_file():
+			try:
+				from twrpdtgen.image_mount import MountedImage
+				import subprocess as _sp
+				with MountedImage(self.vendor_image) as mnt:
+					for bp in [mnt.path / "build.prop", mnt.path / "etc" / "build.prop"]:
+						if bp.is_file():
+							content = _sp.run(["sudo", "cat", str(bp)],
+							                  capture_output=True, text=True, check=True).stdout
+							tmp = Path(mnt._tmpdir.name) / "vnd_bp.prop"
+							tmp.write_text(content)
+							self.build_prop.import_props(tmp)
+							LOGD("Imported vendor build.prop")
+							break
+			except Exception as e:
+				LOGD(f"Warning: failed to import vendor build.prop: {e}")
 
 		self.device_info = DeviceInfo(self.build_prop)
 
@@ -196,14 +246,25 @@ class DeviceTree:
 		recovery_root_path.mkdir(parents=True)
 
 		LOGD("Writing makefiles/blueprints")
+		# Collect system properties for system.prop (from all build.props available)
+		system_props = collect_system_props(self.build_prop)
+		has_system_prop = bool(system_props)
+
 		self._render_template(device_tree_folder, "Android.bp", comment_prefix="//")
 		self._render_template(device_tree_folder, "Android.mk")
 		self._render_template(device_tree_folder, "AndroidProducts.mk")
-		self._render_template(device_tree_folder, "BoardConfig.mk")
+		self._render_template(device_tree_folder, "BoardConfig.mk",
+		                      has_system_prop=has_system_prop)
 		self._render_template(device_tree_folder, "device.mk")
 		self._render_template(device_tree_folder, "twrp_device.mk", out_file=f"twrp_{self.device_info.codename}.mk")
 		self._render_template(device_tree_folder, "README.md")
 		self._render_template(device_tree_folder, "vendorsetup.sh")
+
+		# Generate system.prop if crypto/TEE props are available
+		if has_system_prop:
+			self._render_template(device_tree_folder, "system.prop",
+			                      system_props=system_props)
+			LOGD(f"Generated system.prop with {sum(len(v) for v in system_props.values())} properties")
 
 		LOGD("Copying kernel...")
 		if self.image_info.kernel is not None:
@@ -334,6 +395,30 @@ class DeviceTree:
 				bootctrl_dest = device_tree_folder / "bootctrl"
 				self._copy_dir_recursive(bootctrl_src, bootctrl_dest)
 				LOGD("Copied MTK bootctrl sources")
+
+		# Extract files from vendor partition image (firmware, HAL binaries, libraries)
+		if self.vendor_image and self.vendor_image.is_file():
+			try:
+				extract_vendor_files(
+					self.vendor_image,
+					recovery_root_path,
+					self.build_prop,
+					is_mtk=self.is_mtk,
+				)
+			except Exception as e:
+				LOGD(f"Warning: vendor image extraction failed: {e}")
+
+		# Extract files from system partition image (HAL binaries, libraries)
+		if self.system_image and self.system_image.is_file():
+			try:
+				extract_system_files(
+					self.system_image,
+					recovery_root_path,
+					self.build_prop,
+					is_mtk=self.is_mtk,
+				)
+			except Exception as e:
+				LOGD(f"Warning: system image extraction failed: {e}")
 
 		if not git:
 			return device_tree_folder
