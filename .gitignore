@@ -1,7 +1,7 @@
 # script stuff
 extract/
 output/
-*.img
+/*.img
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -16,8 +16,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -88,4 +88,5 @@ dmypy.json
 
 # editors
 .idea/
-.vscode/
+.vscode/twrpdtgen/aik/bin/
+

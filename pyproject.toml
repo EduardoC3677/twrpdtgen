@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "twrpdtgen"
-version = "3.0.0"
+version = "3.1.0"
 description = "A Python library/script to automatically generate TWRP-compatible device tree from a boot/recovery image"
 authors = ["Sebastiano Barezzi <barezzisebastiano@gmail.com>"]
 license = "Apache-2.0"
@@ -14,7 +14,7 @@ twrpdtgen = 'twrpdtgen.main:main'
 python = "^3.8"
 GitPython = "^3.1.27"
 Jinja2 = "^3.1.1"
-sebaubuntu-libs = "^1.3.0"
+pyelftools = ">=0.29"
 
 [tool.poetry.dev-dependencies]
 

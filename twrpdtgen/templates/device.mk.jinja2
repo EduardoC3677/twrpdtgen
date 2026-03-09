@@ -1,8 +1,26 @@
 {% include 'LICENSE.jinja2' %}
 
 LOCAL_PATH := device/{{ device_info.manufacturer }}/{{ device_info.codename }}
+{% if device_info.device_uses_dynamic_partitions %}
+
+# Dynamic partitions
+PRODUCT_USE_DYNAMIC_PARTITIONS := true
+{% endif %}
+{% if is_vendor_boot and device_info.device_is_ab %}
+
+# Virtual A/B
+ENABLE_VIRTUAL_AB := true
+$(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota/launch_with_vendor_ramdisk.mk)
+
+# Enable project quotas and casefolding for emulated storage without sdcardfs
+$(call inherit-product, $(SRC_TARGET_DIR)/product/emulated_storage.mk)
+{% endif %}
 {% if device_info.device_is_ab %}
+
 # A/B
+PRODUCT_PACKAGES += \
+    otapreopt_script
+
 AB_OTA_POSTINSTALL_CONFIG += \
     RUN_POSTINSTALL_system=true \
     POSTINSTALL_PATH_system=system/bin/otapreopt_script \
@@ -10,24 +28,29 @@ AB_OTA_POSTINSTALL_CONFIG += \
     POSTINSTALL_OPTIONAL_system=true
 
 # Boot control HAL
+{% if is_mtk %}
+PRODUCT_PACKAGES += \
+    android.hardware.boot@1.2-mtkimpl \
+    android.hardware.boot@1.2-mtkimpl.recovery
+{% else %}
 PRODUCT_PACKAGES += \
     android.hardware.boot@1.0-impl \
     android.hardware.boot@1.0-service
 
 PRODUCT_PACKAGES += \
     bootctrl.{{ device_info.platform }}
+{% endif %}
+{% if is_vendor_boot %}
 
-PRODUCT_STATIC_BOOT_CONTROL_HAL := \
-    bootctrl.{{ device_info.platform }} \
-    libgptutils \
-    libz \
-    libcutils
-
+# Fastbootd
 PRODUCT_PACKAGES += \
-    otapreopt_script \
-    cppreopts.sh \
-    update_engine \
-    update_verifier \
-    update_engine_sideload
+    fastbootd \
+    android.hardware.fastboot@1.0-impl-mock
 {% endif %}
 
+# Update engine
+PRODUCT_PACKAGES += \
+    update_engine \
+    update_engine_sideload \
+    update_verifier
+{% endif %}

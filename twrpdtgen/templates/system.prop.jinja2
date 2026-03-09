@@ -1,0 +1,11 @@
+{% include 'LICENSE.jinja2' %}
+
+{% if system_props %}
+{% for category, props in system_props.items() %}
+# {{ category }}
+{% for key, value in props.items() %}
+{{ key }}={{ value }}
+{% endfor %}
+
+{% endfor %}
+{% endif %}
